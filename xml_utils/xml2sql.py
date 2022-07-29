@@ -1,10 +1,11 @@
+import logging
 import re
 import xml.etree.ElementTree as ElemTree
 from sqlite3 import Error
 from sqlite3 import connect as connector
 
 
-class Xml2Sql:
+class XML2SQL:
     def __init__(self, input_file, output_file):
         """Initialize the class with the paths to the input xml file
         and the output sql file.
@@ -17,6 +18,12 @@ class Xml2Sql:
         self.sql_insert = None
         self.output = None
         self.num_insert = 0
+
+        # Create logger object.
+        self.logger = logging.getLogger('evtx_ripper')
+        self.logger.setLevel(logging.DEBUG)
+        fh = logging.FileHandler('evtx_ripper.log')
+        self.logger.addHandler(fh)
 
         self.cursor = None
 
@@ -38,6 +45,7 @@ class Xml2Sql:
                 cur = self.conn.cursor()
                 cur.execute(create_event_table_sql)
             except Error as e:
+                self.logger.error(e)
                 print(e)
 
         self.cur = None
@@ -117,6 +125,6 @@ if __name__ == "__main__":
 
     # db = sqlite3.connect("results.sql")
 
-    xml2sql = Xml2Sql(input_file="{}/results.xml".format(os.curdir),
+    xml2sql = XML2SQL(input_file="{}/results.xml".format(os.curdir),
                       output_file="results.sql")
     xml2sql.convert()

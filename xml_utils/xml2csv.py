@@ -1,3 +1,4 @@
+import logging
 import re
 import codecs
 import xml.etree.ElementTree as ET  # noqa
@@ -16,6 +17,12 @@ class XML2CSV:
         self.output_buffer = []
         self.output = None
 
+        # Create logger object.
+        self.logger = logging.getLogger('evtx_ripper')
+        self.logger.setLevel(logging.DEBUG)
+        fh = logging.FileHandler('evtx_ripper.log')
+        self.logger.addHandler(fh)
+
         # Open the xml file for iteration.
         self.context = ET.iterparse(input_file, events=("start", "end"))
 
@@ -23,6 +30,7 @@ class XML2CSV:
         try:
             self.output = codecs.open(output_file, "w", encoding=encoding)
         except IOError:
+            self.logger.error(IOError, "Failed to open output file")
             print("Failed to open output file")
             raise
 
