@@ -1,6 +1,6 @@
 import re
 import codecs
-import xml.etree.ElementTree as ET
+import xml.etree.ElementTree as ET  # noqa
 
 
 class XML2CSV:
