@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 
+import concurrent.futures
 import logging
 import mmap
+import multiprocessing
 import os
 import sys
 import uuid
-import concurrent.futures
-import multiprocessing
 from optparse import OptionParser
 from xml.dom import minidom
 
@@ -136,7 +136,7 @@ class Ripper:
             xml_to_sql = XML2SQL(input_file=out, output_file=sql)
             xml_to_sql.convert()
 
-        os.remove(out)
+        #os.remove(out)
 
 
 def main():
@@ -197,10 +197,12 @@ def main():
 
     logger.info("collecting Evtx files.")
     files = []
-    if opts.evtx:
-        files = collect_files(opts.input, ".evtx")
-    else:
-        files = collect_files(opts.input, ".log")
+    files = collect_files(opts.input, ".evtx")
+    # if opts.evtx:
+    #     files = collect_files(opts.input, ".evtx")
+    # else:
+    #     files = collect_files(opts.input, ".log")
+
     if files is None:
         logging.error("No files found.")
         exit(1)

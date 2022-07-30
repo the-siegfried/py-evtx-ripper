@@ -1,6 +1,6 @@
+import codecs
 import logging
 import re
-import codecs
 import xml.etree.ElementTree as ET  # noqa
 
 
@@ -63,7 +63,7 @@ class XML2CSV:
             if not elem.tag.endswith("Event"):
                 continue
 
-            children = elem.getchildren()
+            children = list(elem)
             for child in children:
                 title = re.sub('{.+}', '', child.tag)
                 if title == "System":
@@ -76,8 +76,10 @@ class XML2CSV:
                                              val.strip().replace('"', r'""'))
                         header = re.sub('{.+}', '', child_elem.tag)
                         header_line.append(f'{title}_{header}')
-                        value = child_elem.text.strip().replace('"', r'""')     # noqa
-                        items.append('' if child_elem.text is None else value)
+                        value = child_elem.text
+                        if value:
+                            value.strip().replace('"', r'""')     # noqa
+                        items.append('' if value is None else value)
                     processed_fields.append(child_elem.tag)
                 elif title == "EventData":
                     header_line.append("{}_Data".format(title))

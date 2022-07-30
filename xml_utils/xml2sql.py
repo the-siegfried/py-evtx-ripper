@@ -63,7 +63,7 @@ class XML2SQL:
         for event, element in self.context:
             if not element.tag.endswith("Event"):
                 continue
-            children = element.getchildren()
+            children = list(element)
             for child in children:
                 title = re.sub('{.+}', '', child.tag)
                 if title == "System":
@@ -79,8 +79,10 @@ class XML2SQL:
 
                         header = re.sub('{.+}', '', child_elem.tag)
                         columns.append(f'{title.lower()}_{header.lower()}')
-                        txt = child_elem.text.strip().replace('"', r'""')   # noqa
-                        values.append('' if child_elem.text is None else txt)
+                        txt = child_elem.text
+                        if txt:
+                            txt.strip().replace('"', r'""')   # noqa
+                        values.append('' if txt is None else txt)
                 elif title == "EventData":
                     for child_elem in child:
                         if child_elem.attrib:
@@ -95,7 +97,7 @@ class XML2SQL:
                     msg = "[Fatal Error]:: Could not identify child " \
                           "element {}".format(child.tag)
                     print(msg)
-            # all_records = self.cursor.execute("select * from event limit 1")
+            all_records = self.cursor.execute("select * from event limit 1")
             cols = list(map(lambda x: x[0], self.cursor.description))
             new_cols = [col for col in columns if col not in cols]
 
