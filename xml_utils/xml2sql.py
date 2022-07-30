@@ -97,7 +97,11 @@ class XML2SQL:
                     msg = "[Fatal Error]:: Could not identify child " \
                           "element {}".format(child.tag)
                     print(msg)
+
+            # Wake up cursor in order to get the table description.
             all_records = self.cursor.execute("select * from event limit 1")
+
+            # Create list of new and existing columns.
             cols = list(map(lambda x: x[0], self.cursor.description))
             new_cols = [col for col in columns if col not in cols]
 
@@ -115,6 +119,8 @@ class XML2SQL:
                     ', '.join(columns), str(values)[1:-1])
                 self.cursor.execute(insert_record)
                 self.conn.commit()
+
+            # Clear columns and values .
             columns = []
             values = []
 

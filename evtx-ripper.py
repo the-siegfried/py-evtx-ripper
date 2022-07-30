@@ -2,7 +2,6 @@
 
 import concurrent.futures
 import logging
-import mmap
 import multiprocessing
 import os
 import sys
@@ -10,8 +9,7 @@ import uuid
 from optparse import OptionParser
 from xml.dom import minidom
 
-import Evtx.Views
-from Evtx.Evtx import FileHeader
+import Evtx.Evtx as EvtxProcessor
 
 from xml_utils.xml2csv import XML2CSV
 from xml_utils.xml2sql import XML2SQL
@@ -58,15 +56,29 @@ class Ripper:
         self.path = options.input
         self.options = options
 
-    @staticmethod
-    def evtx_to_xml(evtx):
+        # Attach to logger.
+        self.logger = logging.getLogger('evtx_ripper')
+        self.logger.setLevel(logging.DEBUG)
+        fh = logging.FileHandler('evtx_ripper.log')
+        self.logger.addHandler(fh)
+
+    def evtx_to_xml(self, evtx):
         """ Windows evtx file to xml file parser.
         :param evtx:
             Windows evtx file path.
         :returns: None
         """
-        f1 = uuid.uuid4()
-        xml_file_handler = open("results_{}.xml".format(f1), "w")
+
+        success = False
+        file_name = f"results_{uuid.uuid4()}.xml"
+        # Create xml file handler and write header to file.
+        xml_file_handler = open(file_name, "w")
+        h_out = "<?xml version='1.0' encoding='utf-8' standalone='yes'" \
+                " ?>\n<Events>"
+        xml_file_handler.write(h_out)
+
+        # hack to get the length of an xml with the xml deceleration.
+        d_len = len(minidom.Document().toxml())
 
         interested_events = ['1000', '1001', '1002', '1106', '1107', '1115',
                              '1116', '258', '259', '102', '1102', '4624',
@@ -75,51 +87,52 @@ class Ripper:
                              '4778', '4781', '4950', '4964', '104', '1125',
                              '1127', '1129', '4719', '7045']
 
-        with open(evtx, 'r') as f:
-            buf = mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ)
-            fh = FileHeader(buf, 0x00)
-            h_out = "<?xml version='1.0' encoding='utf-8' standalone='yes'" \
-                    " ?>\n<Events>"
-            xml_file_handler.write(h_out)
+        event_count = 0
 
-            # hack to get the length of an xml with the xml deceleration.
-            d_len = len(minidom.Document().toxml())
+        with EvtxProcessor.Evtx(evtx) as log:
+            for chunk in log.chunks():
+                for record in chunk.records():
+                    try:
+                        evt = record.xml()
+                        if evt is not None:
+                            xml_doc = minidom.parseString(
+                                evt.replace("\n", ""))
+                            event_id = xml_doc.getElementsByTagName(
+                                "EventID")[0].childNodes[0].nodeValue
+                    except UnicodeDecodeError as err:
+                        self.logger.warning(f"WARN:: Failed to parse record "
+                                            f"from {evtx}. REASON: {err}.")
+                        continue
 
-            for str_xml, record in Evtx.Views.evtx_file_xml_view(fh):
-                xml_doc = minidom.parseString(str_xml.replace("\n", ""))
-                event_id = xml_doc.getElementsByTagName(
-                    "EventID")[0].childNodes[0].nodeValue
-                if event_id not in interested_events:
-                    continue
-                xml_file_handler.write(xml_doc.toprettyxml()[d_len:])
+                    if event_id not in interested_events:
+                        continue
+                    event_count += 1
+                    xml_file_handler.write(xml_doc.toprettyxml()[d_len:])
 
-            buf.close()
-            end_tag = "</Events>"
-            xml_file_handler.write(end_tag)
-            xml_file_handler.close()
-        return f1
+        if event_count != 0:
+            success = True
+
+        return success, file_name
 
     def process(self, f):
         """
-
         :param f:
         :return:
         """
         self.processed_count += 1
 
-        # Create logger object.
-        logger = logging.getLogger('evtx_ripper')
-        logger.setLevel(logging.DEBUG)
-        fh = logging.FileHandler('evtx_ripper.log')
-        logger.addHandler(fh)
-
         filename_w_ext = os.path.basename(f)
         filename, file_extension = os.path.splitext(filename_w_ext)
         print("Processing {}".format(filename_w_ext))
 
-        out = self.evtx_to_xml(f)
-        out = os.path.abspath(os.path.join(os.curdir,
-                                           "results_{}.xml".format(out)))
+        success, out_file = self.evtx_to_xml(f)
+        if success:
+            self.logger.warning(f"WARN: No successful events found in file "
+                                f"{filename_w_ext}. Proceeding to next "
+                                f"file(s).")
+            return
+
+        out = os.path.abspath(os.path.join(os.curdir, out_file))
 
         if self.options.csv:
             csv = "{}/{}.{}".format(self.options.output, filename, "csv")
@@ -136,7 +149,8 @@ class Ripper:
             xml_to_sql = XML2SQL(input_file=out, output_file=sql)
             xml_to_sql.convert()
 
-        #os.remove(out)
+        # Delete xml file.
+        os.remove(out)
 
 
 def main():
@@ -196,23 +210,18 @@ def main():
         exit(1)
 
     logger.info("collecting Evtx files.")
-    files = []
     files = collect_files(opts.input, ".evtx")
-    # if opts.evtx:
-    #     files = collect_files(opts.input, ".evtx")
-    # else:
-    #     files = collect_files(opts.input, ".log")
 
     if files is None:
-        logging.error("No files found.")
+        logging.error("No file(s) found.")
         exit(1)
     logger.info("Files found: {}".format(len(files)))
-    # chunk up here. 18
+
+    # Chunk up here. 18
     chunks = [files[x:x + opts.cores] for x in range(0, len(files),
                                                      opts.cores)]
     logger.info("Chunked up evtx files")
 
-    # create instance on ripper here
     c_len = len(chunks)
     count = 1
     for x in chunks:
