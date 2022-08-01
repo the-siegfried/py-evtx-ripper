@@ -1,4 +1,5 @@
 import logging
+import multiprocessing
 import re
 import xml.etree.ElementTree as ElemTree
 from sqlite3 import Error
@@ -20,10 +21,8 @@ class XML2SQL:
         self.num_insert = 0
 
         # Create logger object.
-        self.logger = logging.getLogger('evtx_ripper')
-        self.logger.setLevel(logging.DEBUG)
-        fh = logging.FileHandler('evtx_ripper.log')
-        self.logger.addHandler(fh)
+        self.logger = multiprocessing.get_logger()
+        self.logger.info("I got logz")
 
         self.cursor = None
 
