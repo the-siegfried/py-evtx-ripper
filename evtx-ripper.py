@@ -6,6 +6,7 @@ import multiprocessing
 import os
 import sys
 import uuid
+from logging import getLogger, handlers
 from optparse import OptionParser
 from xml.dom import minidom
 
@@ -27,6 +28,8 @@ def collect_files(path, file_type):
     # Instantiate empty list for evtx files found.
     evtx_files = []
 
+    logger = multiprocessing.get_logger()
+
     # Check to see if the input path exists.
     if os.path.isfile(path):
         evtx_files.append(path)
@@ -40,8 +43,63 @@ def collect_files(path, file_type):
 
         return evtx_files
     else:
-        logging.fatal("Input path does not exist")
+        logger.fatal("Input path does not exist")
         return None
+
+
+def evtx_to_xml(evtx):
+    """ Windows evtx file to xml file parser.
+    :param evtx:
+        Windows evtx file path.
+    :returns: None
+    """
+    # Get logger
+    logger = multiprocessing.get_logger()
+
+    success = False
+    file_name = f"results_{uuid.uuid4()}.xml"
+    # Create xml file handler and write header to file.
+    xml_file_handler = open(file_name, "w")
+    h_out = "<?xml version='1.0' encoding='utf-8' standalone='yes'" \
+            " ?>\n<Events>"
+    xml_file_handler.write(h_out)
+
+    # hack to get the length of an xml with the xml deceleration.
+    d_len = len(minidom.Document().toxml())
+
+    interested_events = ['1000', '1001', '1002', '1106', '1107', '1115',
+                         '1116', '258', '259', '102', '1102', '4624',
+                         '4625', '4648', '4697', '4698', '4706', '4720',
+                         '4724', '4728', '4732', '4735', '4740', '4756',
+                         '4778', '4781', '4950', '4964', '104', '1125',
+                         '1127', '1129', '4719', '7045']
+
+    event_count = 0
+
+    with EvtxProcessor.Evtx(evtx) as log:
+        for chunk in log.chunks():
+            for record in chunk.records():
+                try:
+                    evt = record.xml()
+                    if evt is not None:
+                        xml_doc = minidom.parseString(
+                            evt.replace("\n", ""))
+                        event_id = xml_doc.getElementsByTagName(
+                            "EventID")[0].childNodes[0].nodeValue
+                except UnicodeDecodeError as err:
+                    logger.warning(f"WARN:: Failed to parse record "
+                                   f"from {evtx}. REASON: {err}.")
+                    continue
+
+                if event_id not in interested_events:
+                    continue
+                event_count += 1
+                xml_file_handler.write(xml_doc.toprettyxml()[d_len:])
+
+    if event_count != 0:
+        success = True
+
+    return success, file_name
 
 
 class Ripper:
@@ -56,80 +114,24 @@ class Ripper:
         self.path = options.input
         self.options = options
 
-        # Attach to logger.
-        self.logger = logging.getLogger('evtx_ripper')
-        self.logger.setLevel(logging.DEBUG)
-        fh = logging.FileHandler('evtx_ripper.log')
-        self.logger.addHandler(fh)
-
-    def evtx_to_xml(self, evtx):
-        """ Windows evtx file to xml file parser.
-        :param evtx:
-            Windows evtx file path.
-        :returns: None
-        """
-
-        success = False
-        file_name = f"results_{uuid.uuid4()}.xml"
-        # Create xml file handler and write header to file.
-        xml_file_handler = open(file_name, "w")
-        h_out = "<?xml version='1.0' encoding='utf-8' standalone='yes'" \
-                " ?>\n<Events>"
-        xml_file_handler.write(h_out)
-
-        # hack to get the length of an xml with the xml deceleration.
-        d_len = len(minidom.Document().toxml())
-
-        interested_events = ['1000', '1001', '1002', '1106', '1107', '1115',
-                             '1116', '258', '259', '102', '1102', '4624',
-                             '4625', '4648', '4697', '4698', '4706', '4720',
-                             '4724', '4728', '4732', '4735', '4740', '4756',
-                             '4778', '4781', '4950', '4964', '104', '1125',
-                             '1127', '1129', '4719', '7045']
-
-        event_count = 0
-
-        with EvtxProcessor.Evtx(evtx) as log:
-            for chunk in log.chunks():
-                for record in chunk.records():
-                    try:
-                        evt = record.xml()
-                        if evt is not None:
-                            xml_doc = minidom.parseString(
-                                evt.replace("\n", ""))
-                            event_id = xml_doc.getElementsByTagName(
-                                "EventID")[0].childNodes[0].nodeValue
-                    except UnicodeDecodeError as err:
-                        self.logger.warning(f"WARN:: Failed to parse record "
-                                            f"from {evtx}. REASON: {err}.")
-                        continue
-
-                    if event_id not in interested_events:
-                        continue
-                    event_count += 1
-                    xml_file_handler.write(xml_doc.toprettyxml()[d_len:])
-
-        if event_count != 0:
-            success = True
-
-        return success, file_name
-
     def process(self, f):
         """
         :param f:
         :return:
         """
-        self.processed_count += 1
+        logger = multiprocessing.get_logger()
+        logger.setLevel(logging.INFO)
+        fh = logging.FileHandler('evtx_ripper.log')
+        logger.addHandler(fh)
 
         filename_w_ext = os.path.basename(f)
         filename, file_extension = os.path.splitext(filename_w_ext)
-        print("Processing {}".format(filename_w_ext))
+        logger.info("Processing {}".format(filename_w_ext))
 
-        success, out_file = self.evtx_to_xml(f)
-        if success:
-            self.logger.warning(f"WARN: No successful events found in file "
-                                f"{filename_w_ext}. Proceeding to next "
-                                f"file(s).")
+        success, out_file = evtx_to_xml(f)
+        if not success:
+            logger.warning(f"WARN: No successful events found in file "
+                           f"{filename_w_ext}. Proceeding to next file(s).")
             return
 
         out = os.path.abspath(os.path.join(os.curdir, out_file))
@@ -154,9 +156,11 @@ class Ripper:
 
 
 def main():
+    """ """
+
     # Create logger object.
-    logger = logging.getLogger('evtx_ripper')
-    logger.setLevel(logging.DEBUG)
+    logger = multiprocessing.get_logger()
+    logger.setLevel(logging.INFO)
     fh = logging.FileHandler('evtx_ripper.log')
     logger.addHandler(fh)
 
@@ -213,7 +217,7 @@ def main():
     files = collect_files(opts.input, ".evtx")
 
     if files is None:
-        logging.error("No file(s) found.")
+        logger.error("No file(s) found.")
         exit(1)
     logger.info("Files found: {}".format(len(files)))
 
@@ -230,12 +234,11 @@ def main():
                 count, c_len, len(x), x)
         )
         e = Ripper(opts)
-        logger.info("")
         with concurrent.futures.ProcessPoolExecutor(opts.cores) as executor:
             executor.map(e.process, x)
         count += 1
 
-    logger.info("Success!")
+    logger.info("Evtx file parsing complete...")
     sys.exit()
 
 

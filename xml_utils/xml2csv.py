@@ -1,5 +1,6 @@
 import codecs
 import logging
+import multiprocessing
 import re
 import xml.etree.ElementTree as ET  # noqa
 
@@ -18,10 +19,7 @@ class XML2CSV:
         self.output = None
 
         # Create logger object.
-        self.logger = logging.getLogger('evtx_ripper')
-        self.logger.setLevel(logging.DEBUG)
-        fh = logging.FileHandler('evtx_ripper.log')
-        self.logger.addHandler(fh)
+        self.logger = multiprocessing.get_logger()
 
         # Open the xml file for iteration.
         self.context = ET.iterparse(input_file, events=("start", "end"))
