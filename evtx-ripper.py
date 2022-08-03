@@ -3,17 +3,64 @@
 import concurrent.futures
 import logging
 import multiprocessing
-import os
 import sys
 import uuid
-from logging import getLogger, handlers
+from configparser import ConfigParser
 from optparse import OptionParser
+from os import path
+from os import curdir
+from os import remove
+from os import walk
 from xml.dom import minidom
 
 import Evtx.Evtx as EvtxProcessor
 
 from xml_utils.xml2csv import XML2CSV
 from xml_utils.xml2sql import XML2SQL
+
+
+def configure():
+    """ Configuration.
+    Attempts to read and ingest the application config file if one can be
+    found, else it creates a default one and uses that.
+
+    :return: Returns config object or None.
+    """
+    # capture logger.
+    logger = multiprocessing.get_logger()
+
+    # Create the configparser object.
+    config_object = ConfigParser()
+
+    # Search for config file - if there isn't one create one with defaults.
+    if not path.exists(path.join(curdir, "config.ini")):
+        logger.info("Config file could not be found. Building default config.")
+
+        config_object["RIPPERCONFIG"] = {
+            "cores": 4,
+            "csv": False,
+            "sql": True,
+            "sep": False,
+            "input": "/tests/data/",
+            "output": "/tests/output"
+        }
+
+        with open('config.ini', 'w') as conf:
+            config_object.write(conf)
+
+        logger.info("Default config built.")
+
+    # Read in config and check it has the right section.
+    config_object.read("config.ini")
+    if not config_object.has_section("RIPPERCONFIG"):
+        logger.error("Config file does not contain RIPPERCONFIG!")
+        return None
+
+    # Parse configuration into a dict for use throughout the application.
+    conf = {}
+    for key, val in config_object["RIPPERCONFIG"]:
+        conf[key] = val
+    return conf
 
 
 def collect_files(path, file_type):
@@ -31,12 +78,12 @@ def collect_files(path, file_type):
     logger = multiprocessing.get_logger()
 
     # Check to see if the input path exists.
-    if os.path.isfile(path):
+    if path.isfile(path):
         evtx_files.append(path)
         return evtx_files
-    elif os.path.exists(path):
+    elif path.exists(path):
         # Get list of EVTX files in path.
-        for root, dirs, files in os.walk(path):
+        for root, dirs, files in walk(path):
             for file in files:
                 if file.endswith(file_type):
                     evtx_files.append("{}/{}".format(root, file))
@@ -124,8 +171,8 @@ class Ripper:
         fh = logging.FileHandler('evtx_ripper.log')
         logger.addHandler(fh)
 
-        filename_w_ext = os.path.basename(f)
-        filename, file_extension = os.path.splitext(filename_w_ext)
+        filename_w_ext = path.basename(f)
+        filename, file_extension = path.splitext(filename_w_ext)
         logger.info("Processing {}".format(filename_w_ext))
 
         success, out_file = evtx_to_xml(f)
@@ -134,7 +181,7 @@ class Ripper:
                            f"{filename_w_ext}. Proceeding to next file(s).")
             return
 
-        out = os.path.abspath(os.path.join(os.curdir, out_file))
+        out = path.abspath(path.join(curdir, out_file))
 
         if self.options.csv:
             csv = "{}/{}.{}".format(self.options.output, filename, "csv")
@@ -152,7 +199,7 @@ class Ripper:
             xml_to_sql.convert()
 
         # Delete xml file.
-        os.remove(out)
+        remove(out)
 
 
 def main():
@@ -164,6 +211,9 @@ def main():
     fh = logging.FileHandler('evtx_ripper.log')
     logger.addHandler(fh)
 
+    # Capture device core count.
+    core_count = multiprocessing.cpu_count()
+
     # Handle options parsing.
     sample_msg = "\r\n" \
                  "Example:\r\n" \
@@ -172,9 +222,11 @@ def main():
                  "'C:/Users/abishop/sql_out'"
 
     parser = OptionParser()
+    parser.add_option('-f', '--force', dest="force", default=False,
+                      action="store_true")
     parser.add_option("-c", "--cores", dest="cores", type="int", default=4,
                       help="number of cores for processing.")
-    parser.add_option("-C", "--csv", dest="csv", default=False,
+    parser.add_option("-v", "--csv", dest="csv", default=False,
                       action="store_true",
                       help="evtx2csv parser.")
     parser.add_option("-d", "--db", dest="sql", default=False,
@@ -189,29 +241,31 @@ def main():
                       help="output path.")
     (opts, args) = parser.parse_args()
 
-    if opts.csv is False and opts.sql is False:
-        msg = "No parser type selected. Please choose from the options " \
-              "displayed below:\r\n" \
-              "'-c' '--csv' for evtx2csv\r\n" \
-              "'-d' '--db' for evtx2sql\r\n{}".format(sample_msg)
-        parser.error(msg)
-        logger.warning(msg)
+    if opts.force:
+        if opts.csv is False and opts.sql is False:
+            msg = "No output type selected. Please choose from the options " \
+                  "displayed below:\r\n" \
+                  "'-c' '--csv' for evtx2csv\r\n" \
+                  "'-d' '--db' for evtx2sql\r\n{}".format(sample_msg)
+            parser.error(msg)
+            logger.warning(msg)
 
-    if not opts.input:
-        err = "Input not given"
-        parser.error(err)
-        logger.error(err)
-    if not opts.output:
-        err = "Output not given"
-        parser.error(err)
-        logger.error(err)
+        if not opts.input:
+            err = "Input not given"
+            parser.error(err)
+            logger.error(err)
+        if not opts.output:
+            err = "Output not given"
+            parser.error(err)
+            logger.error(err)
 
-    core_count = multiprocessing.cpu_count()
-    if opts.cores >= core_count:
-        logger.error("Number of cores given is equal to or greater than the "
-                     "number of actual cores available. avail.{}"
-                     "try reducing this number.".format(core_count))
-        exit(1)
+        if opts.cores >= core_count:
+            logger.error("Number of cores given is equal to or greater than "
+                         "the number of actual cores available. avail.{}"
+                         "try reducing this number.".format(core_count))
+            exit(1)
+    else:
+        conf = configure()
 
     logger.info("collecting Evtx files.")
     files = collect_files(opts.input, ".evtx")
