@@ -7,6 +7,7 @@ import sys
 import uuid
 from configparser import ConfigParser
 from optparse import OptionParser
+from optparse import Values
 from os import path
 from os import curdir
 from os import remove
@@ -31,12 +32,15 @@ def configure():
 
     # Create the configparser object.
     config_object = ConfigParser()
+    _prod = 'RIPPER_CONFIG'
+    _test = 'RIPPER_TEST'
+    _conf_name = _prod
 
     # Search for config file - if there isn't one create one with defaults.
     if not path.exists(path.join(curdir, "config.ini")):
         logger.info("Config file could not be found. Building default config.")
 
-        config_object["RIPPERCONFIG"] = {
+        config_object[_prod] = {
             "cores": 4,
             "csv": False,
             "sql": True,
@@ -52,22 +56,24 @@ def configure():
 
     # Read in config and check it has the right section.
     config_object.read("config.ini")
-    if not config_object.has_section("RIPPERCONFIG"):
-        logger.error("Config file does not contain RIPPERCONFIG!")
+    if config_object.has_section(_prod) or config_object.has_section(_test):
+        _conf_name = _prod if not config_object.has_section(_test) else _test
+    else:
+        logger.error("Config file does not contain RIPPER_CONFIG!")
         return None
 
     # Parse configuration into a dict for use throughout the application.
     conf = {}
-    for key, val in config_object["RIPPERCONFIG"]:
-        conf[key] = val
+    for x in config_object.options(_conf_name):
+        conf[x] = config_object.get(_conf_name, x)
     return conf
 
 
-def collect_files(path, file_type):
+def collect_files(file_path, file_type):
     """ File collector.
     Walks the input path provided in order to find evtx files.
 
-    :param path: File path to collect evtx files from.
+    :param file_path: File path to collect evtx files from.
     :param file_type: evtx filetype.
     :return: Returns 'evtx_files', list of discovered evtx file else
     returns None.
@@ -78,12 +84,12 @@ def collect_files(path, file_type):
     logger = multiprocessing.get_logger()
 
     # Check to see if the input path exists.
-    if path.isfile(path):
+    if path.isfile(file_path):
         evtx_files.append(path)
         return evtx_files
-    elif path.exists(path):
+    elif path.exists(file_path):
         # Get list of EVTX files in path.
-        for root, dirs, files in walk(path):
+        for root, dirs, files in walk(file_path):
             for file in files:
                 if file.endswith(file_type):
                     evtx_files.append("{}/{}".format(root, file))
@@ -265,7 +271,8 @@ def main():
                          "try reducing this number.".format(core_count))
             exit(1)
     else:
-        conf = configure()
+        # Use optparse.Values to parse configure() results.
+        opts = Values(configure())
 
     logger.info("collecting Evtx files.")
     files = collect_files(opts.input, ".evtx")
