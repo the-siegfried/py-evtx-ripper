@@ -30,6 +30,11 @@ def configure():
     # capture logger.
     logger = multiprocessing.get_logger()
 
+    interested_events = "1000,1001,1002,1106,1107,1115,1116,258,259,102," \
+                        "1102,4624,4625,4648,4697,4698,4706,4720,4724,4728," \
+                        "4732,4735,4740,4756,4778,4781,4950,4964,104,1125," \
+                        "1127,1129,4719,7045"
+
     # Create the configparser object.
     config_object = ConfigParser()
     _prod = 'RIPPER_CONFIG'
@@ -46,7 +51,8 @@ def configure():
             "sql": True,
             "sep": False,
             "input": "/tests/data/",
-            "output": "/tests/output"
+            "output": "/tests/output",
+            "interested_events": interested_events
         }
 
         with open('config.ini', 'w') as conf:
@@ -100,13 +106,14 @@ def collect_files(file_path, file_type):
         return None
 
 
-def evtx_to_xml(evtx):
+def evtx_to_xml(evtx, interested_events):
     """ Windows evtx file to xml file parser.
+    :param interested_events:
     :param evtx:
         Windows evtx file path.
     :returns: None
     """
-    # Get logger
+    # Capture the logger
     logger = multiprocessing.get_logger()
 
     success = False
@@ -117,15 +124,11 @@ def evtx_to_xml(evtx):
             " ?>\n<Events>"
     xml_file_handler.write(h_out)
 
-    # hack to get the length of an xml with the xml deceleration.
+    # Hack to get the length of an xml with the xml deceleration.
     d_len = len(minidom.Document().toxml())
 
-    interested_events = ['1000', '1001', '1002', '1106', '1107', '1115',
-                         '1116', '258', '259', '102', '1102', '4624',
-                         '4625', '4648', '4697', '4698', '4706', '4720',
-                         '4724', '4728', '4732', '4735', '4740', '4756',
-                         '4778', '4781', '4950', '4964', '104', '1125',
-                         '1127', '1129', '4719', '7045']
+    # Split out interested events from config to filter by.
+    interested_events = interested_events.split(',')
 
     event_count = 0
 
@@ -181,7 +184,7 @@ class Ripper:
         filename, file_extension = path.splitext(filename_w_ext)
         logger.info("Processing {}".format(filename_w_ext))
 
-        success, out_file = evtx_to_xml(f)
+        success, out_file = evtx_to_xml(f, self.options.interested_events)
         if not success:
             logger.warning(f"WARN: No successful events found in file "
                            f"{filename_w_ext}. Proceeding to next file(s).")
@@ -245,6 +248,11 @@ def main():
                       help="input file or folder.")
     parser.add_option("-o", "--output", dest="output",
                       help="output path.")
+    parser.add_option('-e', '--interested_events',
+                      help="Takes a list of events of interest to filter by. "
+                           "Use like: extv-ripper -e 1001,4697."
+                           "Note: There are no spaces between each event id.")
+    # Parse the options.
     (opts, args) = parser.parse_args()
 
     if opts.force:
