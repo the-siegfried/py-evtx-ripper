@@ -16,6 +16,7 @@ only pull out events of interest.
 ## How to use it: 
 
 ```
+-f --force  # for forcing command line events over the discovered config file.
 -c --cores  # for selecting the number of cores/concurrent files to process.
 -C --csv    # for selecting the csv parser.
 -d --db     # for selecting the db parser.
@@ -24,6 +25,8 @@ only pull out events of interest.
 
 -i --input  # input path or directory.
 -o --output # output path.
+
+-e --interested_events # for accepting windows event ids to filter by.
 ```
 
 #### Example: 

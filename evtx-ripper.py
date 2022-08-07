@@ -248,6 +248,11 @@ def main():
                       help="input file or folder.")
     parser.add_option("-o", "--output", dest="output",
                       help="output path.")
+    parser.add_option('-e', '--interested_events',
+                      help="Takes a list of events of interest to filter by. "
+                           "Use like: extv-ripper -e 1001,4697."
+                           "Note: There are no spaces between each event id.")
+    # Parse the options.
     (opts, args) = parser.parse_args()
 
     if opts.force:
